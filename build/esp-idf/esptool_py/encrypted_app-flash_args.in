@@ -1,2 +1,0 @@
---flash_mode dio --flash_freq 80m --flash_size 8MB  $<IF:$<BOOL:$<TARGET_PROPERTY:encrypted-app-flash,NON_ENCRYPTED_IMAGES>>,,--encrypt>
-0x20000 $<TARGET_PROPERTY:__idf_build_target,EXECUTABLE_NAME>.bin
