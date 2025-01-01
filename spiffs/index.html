@@ -250,7 +250,11 @@
                 wifiList.innerHTML = '<div style="text-align: center;">扫描中...</div>';
                 
                 const response = await fetch('/scan');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 const data = await response.json();
+                console.log('Received data:', data);  // 添加调试日志
                 
                 if (data.status === 'error') {
                     showStatus(data.message || '扫描失败', 'error');
@@ -271,7 +275,7 @@
                         div.className = 'wifi-item';
                         div.innerHTML = `
                             <span class="wifi-name">${network.ssid}</span>
-                            <span class="wifi-signal">${getSignalStrengthIcon(network.rssi)}</span>
+                            <span class="wifi-signal">${getSignalStrengthIcon(network.rssi)} (${network.rssi}dBm)</span>
                         `;
                         div.onclick = () => {
                             document.getElementById('ssid').value = network.ssid;
@@ -281,7 +285,8 @@
                     });
             } catch (error) {
                 console.error('扫描错误:', error);
-                showStatus('扫描WiFi失败', 'error');
+                showStatus(`扫描WiFi失败: ${error.message}`, 'error');
+                wifiList.innerHTML = '<div style="text-align: center; color: red;">扫描失败</div>';
             }
         }
 

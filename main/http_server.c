@@ -114,6 +114,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         snprintf(err_msg, sizeof(err_msg), "{\"status\":\"error\",\"message\":\"Scan failed: %s\"}", esp_err_to_name(scan_ret));
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, err_msg, strlen(err_msg));
+        ESP_LOGI(TAG, "发送错误响应: %s", err_msg);
         return ESP_OK;
     }
     
@@ -125,6 +126,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         const char *response = "{\"status\":\"error\",\"message\":\"Failed to get AP count\"}";
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, response, strlen(response));
+        ESP_LOGI(TAG, "发送错误响应: %s", response);
         return ESP_OK;
     }
     
@@ -134,6 +136,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         const char *response = "{\"status\":\"success\",\"message\":\"No WiFi networks found\",\"networks\":[]}";
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, response, strlen(response));
+        ESP_LOGI(TAG, "发送空网络响应: %s", response);
         return ESP_OK;
     }
     
@@ -143,6 +146,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         const char *response = "{\"status\":\"error\",\"message\":\"Memory allocation failed\"}";
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, response, strlen(response));
+        ESP_LOGI(TAG, "发送错误响应: %s", response);
         return ESP_OK;
     }
     
@@ -153,6 +157,7 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         const char *response = "{\"status\":\"error\",\"message\":\"Failed to get AP records\"}";
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, response, strlen(response));
+        ESP_LOGI(TAG, "发送错误响应: %s", response);
         return ESP_OK;
     }
     
@@ -175,6 +180,8 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     char *json_response = cJSON_Print(root);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, json_response);
+    
+    ESP_LOGI(TAG, "发送成功响应: %s", json_response);
     
     free(json_response);
     cJSON_Delete(root);
