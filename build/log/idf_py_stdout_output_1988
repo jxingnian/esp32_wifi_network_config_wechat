@@ -1,0 +1,18 @@
+[1/12] cmd.exe /C "cd /D C:\XingNian\GeRen\EspWifiNetworkConfig\build && C:\Espressif\python_env\idf5.0_py3.11_env\Scripts\python.exe C:/Espressif/frameworks/esp-idf-v5.0.2/components/spiffs/spiffsgen.py 0x200000 C:/XingNian/GeRen/EspWifiNetworkConfig/spiffs C:/XingNian/GeRen/EspWifiNetworkConfig/build/storage.bin --page-size=256 --obj-name-len=32 --meta-len=4 --use-magic --use-magic-len"
+[2/12] Performing build step for 'bootloader'
+[1/1] cmd.exe /C "cd /D C:\XingNian\GeRen\EspWifiNetworkConfig\build\bootloader\esp-idf\esptool_py && C:\Espressif\python_env\idf5.0_py3.11_env\Scripts\python.exe C:/Espressif/frameworks/esp-idf-v5.0.2/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 C:/XingNian/GeRen/EspWifiNetworkConfig/build/bootloader/bootloader.bin"
+Bootloader binary size 0x79d0 bytes. 0x630 bytes (5%) free.
+[3/10] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/main.c.obj
+[4/10] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/http_server.c.obj
+[5/10] Linking C static library esp-idf\main\libmain.a
+[6/10] Generating ld/sections.ld
+[7/10] Building C object CMakeFiles/wifi_softAP.elf.dir/project_elf_src_esp32s3.c.obj
+[8/10] Linking CXX executable wifi_softAP.elf
+[9/10] Generating binary image from built executable
+esptool.py v4.7.0
+Creating esp32s3 image...
+Merged 2 ELF sections
+Successfully created esp32s3 image.
+Generated C:/XingNian/GeRen/EspWifiNetworkConfig/build/wifi_softAP.bin
+[10/10] cmd.exe /C "cd /D C:\XingNian\GeRen\EspWifiNetworkConfig\build\esp-idf\esptool_py && C:\Espressif\python_env\idf5.0_py3.11_env\Scripts\python.exe C:/Espressif/frameworks/esp-idf-v5.0.2/components/partition_table/check_sizes.py --offset 0x8000 partition --type app C:/XingNian/GeRen/EspWifiNetworkConfig/build/partition_table/partition-table.bin C:/XingNian/GeRen/EspWifiNetworkConfig/build/wifi_softAP.bin"
+wifi_softAP.bin binary size 0xc0d50 bytes. Smallest app partition is 0x100000 bytes. 0x3f2b0 bytes (25%) free.
