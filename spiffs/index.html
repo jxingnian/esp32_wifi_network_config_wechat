@@ -203,11 +203,77 @@
         .refresh-icon {
             margin-right: 5px;
         }
+
+        .author {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .status-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .saved-wifi-section {
+            margin-bottom: 20px;
+        }
+        
+        .saved-wifi-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .delete-btn {
+            background-color: #dc3545;
+            padding: 5px 10px;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        
+        .delete-btn:hover {
+            background-color: #c82333;
+        }
+        
+        .connect-btn {
+            background-color: #28a745;
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+        
+        .connect-btn:hover {
+            background-color: #218838;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>ESP32 WiFi配置</h1>
+        <div class="author">By.星年</div>
+        
+        <div class="status-section">
+            <h2>当前连接状态</h2>
+            <div id="wifi-status">正在获取状态...</div>
+        </div>
+        
+        <div class="saved-wifi-section">
+            <h2>已保存的WiFi</h2>
+            <div id="saved-wifi-list">正在加载...</div>
+        </div>
+        
         <button class="refresh-btn" onclick="scanWiFi()">
             <span class="refresh-icon">🔄</span> 扫描WiFi
         </button>
@@ -330,6 +396,117 @@
                 isConfiguring = false;
                 submitBtn.disabled = false;
             }
+        });
+
+        // 获取WiFi状态
+        async function getWiFiStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                const statusDiv = document.getElementById('wifi-status');
+                
+                if (data.status === 'connected') {
+                    statusDiv.innerHTML = `
+                        <p><strong>状态:</strong> 已连接</p>
+                        <p><strong>SSID:</strong> ${data.ssid}</p>
+                        <p><strong>信号强度:</strong> ${data.rssi} dBm ${getSignalStrengthIcon(data.rssi)}</p>
+                        <p><strong>BSSID:</strong> ${data.bssid}</p>
+                    `;
+                } else {
+                    statusDiv.innerHTML = '<p><strong>状态:</strong> 未连接</p>';
+                }
+            } catch (error) {
+                console.error('获取WiFi状态失败:', error);
+                document.getElementById('wifi-status').innerHTML = '获取状态失败';
+            }
+        }
+
+        // 获取已保存的WiFi列表
+        async function getSavedWiFi() {
+            try {
+                const response = await fetch('/api/saved');
+                const data = await response.json();
+                const listDiv = document.getElementById('saved-wifi-list');
+                
+                if (data.length === 0) {
+                    listDiv.innerHTML = '<p>没有已保存的WiFi</p>';
+                    return;
+                }
+                
+                listDiv.innerHTML = data.map(wifi => `
+                    <div class="saved-wifi-item">
+                        <span>${wifi.ssid}</span>
+                        <div class="btn-group">
+                            <button class="connect-btn" onclick="connectToWiFi('${wifi.ssid}')">连接</button>
+                            <button class="delete-btn" onclick="deleteWiFi('${wifi.ssid}')">删除</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('获取已保存WiFi失败:', error);
+                document.getElementById('saved-wifi-list').innerHTML = '获取已保存WiFi失败';
+            }
+        }
+
+        // 连接到已保存的WiFi
+        async function connectToWiFi(ssid) {
+            if (isConfiguring) return;
+            isConfiguring = true;
+            
+            showStatus('正在连接到 ' + ssid + '...', 'loading');
+            
+            try {
+                const response = await fetch('/api/connect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ ssid: ssid })
+                });
+                
+                if (response.ok) {
+                    showStatus('连接成功！', 'success');
+                    setTimeout(getWiFiStatus, 2000);
+                } else {
+                    showStatus('连接失败', 'error');
+                }
+            } catch (error) {
+                showStatus('连接失败: ' + error.message, 'error');
+            }
+            
+            isConfiguring = false;
+        }
+
+        // 删除已保存的WiFi
+        async function deleteWiFi(ssid) {
+            if (!confirm(`确定要删除 ${ssid} 吗？`)) return;
+            
+            try {
+                const response = await fetch('/api/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ ssid: ssid })
+                });
+                
+                if (response.ok) {
+                    showStatus('删除成功', 'success');
+                    getSavedWiFi();
+                    getWiFiStatus();
+                } else {
+                    showStatus('删除失败', 'error');
+                }
+            } catch (error) {
+                showStatus('删除失败: ' + error.message, 'error');
+            }
+        }
+
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            getWiFiStatus();
+            getSavedWiFi();
+            setInterval(getWiFiStatus, 5000); // 每5秒更新一次状态
         });
 
         // 页面加载完成后自动扫描WiFi

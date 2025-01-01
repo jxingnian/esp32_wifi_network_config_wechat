@@ -244,6 +244,95 @@ static esp_err_t configure_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// 获取WiFi连接状态
+static esp_err_t wifi_status_get_handler(httpd_req_t *req)
+{
+    wifi_ap_record_t ap_info;
+    char *response = NULL;
+    cJSON *root = cJSON_CreateObject();
+    
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        cJSON_AddStringToObject(root, "status", "connected");
+        cJSON_AddStringToObject(root, "ssid", (char *)ap_info.ssid);
+        cJSON_AddNumberToObject(root, "rssi", ap_info.rssi);
+        char bssid_str[18];
+        sprintf(bssid_str, "%02X:%02X:%02X:%02X:%02X:%02X",
+                ap_info.bssid[0], ap_info.bssid[1], ap_info.bssid[2],
+                ap_info.bssid[3], ap_info.bssid[4], ap_info.bssid[5]);
+        cJSON_AddStringToObject(root, "bssid", bssid_str);
+    } else {
+        cJSON_AddStringToObject(root, "status", "disconnected");
+    }
+    
+    response = cJSON_PrintUnformatted(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, response);
+    
+    free(response);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+// 获取已保存的WiFi列表
+static esp_err_t saved_wifi_get_handler(httpd_req_t *req)
+{
+    wifi_config_t wifi_config;
+    cJSON *root = cJSON_CreateArray();
+    char *response = NULL;
+
+    size_t saved_entries = 0;
+    esp_err_t err = esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_config);
+    if (err == ESP_OK && strlen((char*)wifi_config.sta.ssid) > 0) {
+        cJSON *wifi = cJSON_CreateObject();
+        cJSON_AddStringToObject(wifi, "ssid", (char*)wifi_config.sta.ssid);
+        cJSON_AddItemToArray(root, wifi);
+    }
+
+    response = cJSON_PrintUnformatted(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, response);
+
+    free(response);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+// 删除保存的WiFi
+static esp_err_t delete_wifi_post_handler(httpd_req_t *req)
+{
+    char buf[100];
+    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (ret <= 0) {
+        return ESP_FAIL;
+    }
+    buf[ret] = '\0';
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+
+    cJSON *ssid = cJSON_GetObjectItem(root, "ssid");
+    if (!ssid || !cJSON_IsString(ssid)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing or invalid SSID");
+        return ESP_FAIL;
+    }
+
+    wifi_config_t wifi_config;
+    if (esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_config) == ESP_OK) {
+        if (strcmp((char*)wifi_config.sta.ssid, ssid->valuestring) == 0) {
+            memset(&wifi_config, 0, sizeof(wifi_config_t));
+            esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config);
+        }
+    }
+
+    cJSON_Delete(root);
+    httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+    return ESP_OK;
+}
+
 // URI处理结构
 static const httpd_uri_t root = {
     .uri       = "/",
@@ -266,6 +355,27 @@ static const httpd_uri_t configure = {
     .user_ctx  = NULL
 };
 
+static const httpd_uri_t wifi_status = {
+    .uri       = "/api/status",
+    .method    = HTTP_GET,
+    .handler   = wifi_status_get_handler,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t saved_wifi = {
+    .uri       = "/api/saved",
+    .method    = HTTP_GET,
+    .handler   = saved_wifi_get_handler,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t delete_wifi = {
+    .uri       = "/api/delete",
+    .method    = HTTP_POST,
+    .handler   = delete_wifi_post_handler,
+    .user_ctx  = NULL
+};
+
 // 启动Web服务器
 esp_err_t start_webserver(void)
 {
@@ -280,6 +390,9 @@ esp_err_t start_webserver(void)
         httpd_register_uri_handler(server, &root);
         httpd_register_uri_handler(server, &scan);
         httpd_register_uri_handler(server, &configure);
+        httpd_register_uri_handler(server, &wifi_status);
+        httpd_register_uri_handler(server, &saved_wifi);
+        httpd_register_uri_handler(server, &delete_wifi);
         return ESP_OK;
     }
     
