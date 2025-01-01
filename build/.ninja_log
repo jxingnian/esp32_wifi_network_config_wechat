@@ -1056,3 +1056,13 @@
 8566	8648	0	C:/XingNian/GeRen/EspWifiNetworkConfig/build/esp-idf/esptool_py/CMakeFiles/app_check_size	9b6fa77cdf4157c2
 8649	107818	0	CMakeFiles/encrypted-flash	e15bc89200c1ab5b
 8649	107818	0	C:/XingNian/GeRen/EspWifiNetworkConfig/build/CMakeFiles/encrypted-flash	e15bc89200c1ab5b
+37	124	0	esp-idf/esptool_py/CMakeFiles/app_check_size	9b6fa77cdf4157c2
+37	124	0	C:/XingNian/GeRen/EspWifiNetworkConfig/build/esp-idf/esptool_py/CMakeFiles/app_check_size	9b6fa77cdf4157c2
+45	209	7574509303202346	bootloader-prefix/src/bootloader-stamp/bootloader-build	d1490d65bf8e6703
+45	209	7574509303202346	bootloader/bootloader.elf	d1490d65bf8e6703
+45	209	7574509303202346	bootloader/bootloader.bin	d1490d65bf8e6703
+45	209	7574509303202346	bootloader/bootloader.map	d1490d65bf8e6703
+45	209	7574509303202346	C:/XingNian/GeRen/EspWifiNetworkConfig/build/bootloader-prefix/src/bootloader-stamp/bootloader-build	d1490d65bf8e6703
+45	209	7574509303202346	C:/XingNian/GeRen/EspWifiNetworkConfig/build/bootloader/bootloader.elf	d1490d65bf8e6703
+45	209	7574509303202346	C:/XingNian/GeRen/EspWifiNetworkConfig/build/bootloader/bootloader.bin	d1490d65bf8e6703
+45	209	7574509303202346	C:/XingNian/GeRen/EspWifiNetworkConfig/build/bootloader/bootloader.map	d1490d65bf8e6703

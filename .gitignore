@@ -1,0 +1,41 @@
+# ESP-IDF specific
+build/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+
+# VSCode specific
+.vscode/
+*.code-workspace
+.history/
+
+# Build generated
+*.o
+*.d
+*.pyc
+__pycache__/
+.pytest_cache/
+
+# IDE specific
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Debug files
+*.log
+*.debug
+
+# Binary files
+*.bin
+*.elf
+*.map
+
+# Temporary files
+*.bak
+*.tmp
+*.temp
