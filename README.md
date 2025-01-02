@@ -61,6 +61,16 @@ Example Configuration -> wifi password
   - `index.html` - 主页面
 - `/partitions.csv` - 分区表配置
 
+---
+
+## 注意
+
+1.项目已开启加密
+
+2.flash8M
+
+3.关闭nvs加密
+
 ## 自定义配置
 
 ### 1. 修改分区表
