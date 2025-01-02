@@ -1,8 +1,8 @@
 /*
  * @Author: jxingnian j_xingnian@163.com
  * @Date: 2025-01-01 11:27:58
- * @LastEditors: jxingnian j_xingnian@163.com
- * @LastEditTime: 2025-01-02 00:15:13
+ * @LastEditors: xingnina j_xingnian@163.com
+ * @LastEditTime: 2025-01-02 21:55:40
  * @FilePath: \EspWifiNetworkConfig\main\main.c
  * @Description: WiFi配网主程序
  */
@@ -15,8 +15,41 @@
 #include "esp_spiffs.h"
 #include "wifi_manager.h"
 #include "http_server.h"
+#include "mqtt_client.h"
+#include "mqtt_config.h"
 
 static const char *TAG = "main";
+
+// WiFi连接成功后的回调函数
+static void wifi_connected_handler(void)
+{
+    ESP_LOGI(TAG, "WiFi已连接，正在初始化MQTT客户端...");
+    
+    // 配置MQTT客户端
+    mqtt_client_config_t mqtt_cfg = {
+        .broker_url = CONFIG_MQTT_BROKER_URL,
+        .port = CONFIG_MQTT_BROKER_PORT,
+        .client_id = CONFIG_MQTT_CLIENT_ID,
+        .username = NULL,  // 如果需要认证，在这里设置
+        .password = NULL   // 如果需要认证，在这里设置
+    };
+    
+    // 初始化MQTT客户端
+    esp_err_t err = mqtt_client_init(&mqtt_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "MQTT客户端初始化失败");
+        return;
+    }
+    
+    // 启动MQTT客户端
+    err = mqtt_client_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "MQTT客户端启动失败");
+        return;
+    }
+    
+    ESP_LOGI(TAG, "MQTT客户端启动成功");
+}
 
 // 初始化SPIFFS
 static esp_err_t init_spiffs(void)
@@ -66,11 +99,8 @@ void app_main(void)
     // 初始化SPIFFS
     ESP_ERROR_CHECK(init_spiffs());
 
-    // 初始化并启动WiFi AP
-    ESP_LOGI(TAG, "Starting WiFi in AP mode");
-    ESP_ERROR_CHECK(wifi_init_softap());
 
     // 启动HTTP服务器
     ESP_ERROR_CHECK(start_webserver());
-    ESP_LOGI(TAG, "System initialized successfully");
+    ESP_LOGI(TAG, "系统初始化成功");
 }
