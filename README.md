@@ -34,11 +34,11 @@ By.星年
 
 ### 2. 修改AP热点配置
 
-在`main/main.c`文件中修改以下参数：
-```c
-#define EXAMPLE_ESP_WIFI_SSID      "ESP32_WiFi_Config"
-#define EXAMPLE_ESP_WIFI_PASS      "12345678"
-```
+在menuconfig中配置
+
+Example Configuration -> wifi ssid
+
+Example Configuration -> wifi password
 
 ### 3. 查看WiFi状态
 
@@ -65,17 +65,18 @@ By.星年
 
 ### 1. 修改分区表
 
-项目使用了自定义的分区表，可以在`partitions.csv`中修改。
+项目使用了自定义的分区表，可以在 `partitions.csv`中修改。
 
 ### 2. 移植到其他项目
 
-1. 复制`http_server.c`和`index.html`到目标项目
+1. 复制 `http_server.c`和 `index.html`到目标项目
 2. 确保目标项目包含必要的组件配置
-3. 在主程序中调用`start_webserver()`函数
+3. 在主程序中调用 `start_webserver()`函数
 
 ## 开发环境
 
-- ESP-IDF 版本：v5.0及以上
+- ESP-IDF 版本：v5.0
+- 芯片：esp32-s3
 - 编译器：GCC
 - 开发工具：VS Code + ESP-IDF 插件
 
@@ -85,4 +86,4 @@ MIT License
 
 ## 链接
 
-- GitHub仓库：https://github.com/jxingnian/esp32_wifi_network_config.git
+- GitHub仓库：https://github.com/jxingnian/esp32_wifi_network_config
