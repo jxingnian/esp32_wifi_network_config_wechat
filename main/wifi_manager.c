@@ -18,20 +18,67 @@
 
 static const char *TAG = "wifi_manager";  // 日志标签
 
+#define MAX_RETRY_COUNT 5
+static int s_retry_num = 0;
+
 // WiFi事件处理函数
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                     int32_t event_id, void* event_data)
 {
-    if (event_id == WIFI_EVENT_AP_STACONNECTED) {
-        // 当有设备连接到AP时
-        wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
-        ESP_LOGI(TAG, "设备 "MACSTR" 已连接, AID=%d",
-                 MAC2STR(event->mac), event->aid);
-    } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
-        // 当有设备从AP断开连接时
-        wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
-        ESP_LOGI(TAG, "设备 "MACSTR" 已断开连接, AID=%d",
-                 MAC2STR(event->mac), event->aid);
+    if (event_base == WIFI_EVENT) {
+        switch (event_id) {
+            case WIFI_EVENT_AP_STACONNECTED:
+                wifi_event_ap_staconnected_t* ap_event = (wifi_event_ap_staconnected_t*) event_data;
+                ESP_LOGI(TAG, "设备 "MACSTR" 已连接, AID=%d",
+                         MAC2STR(ap_event->mac), ap_event->aid);
+                break;
+            case WIFI_EVENT_AP_STADISCONNECTED:
+                wifi_event_ap_stadisconnected_t* ap_disc_event = (wifi_event_ap_stadisconnected_t*) event_data;
+                ESP_LOGI(TAG, "设备 "MACSTR" 已断开连接, AID=%d",
+                         MAC2STR(ap_disc_event->mac), ap_disc_event->aid);
+                break;
+            case WIFI_EVENT_STA_START:
+                ESP_LOGI(TAG, "WIFI_EVENT_STA_START，尝试连接到AP...");
+                esp_wifi_connect();
+                break;
+            case WIFI_EVENT_STA_CONNECTED:
+                ESP_LOGI(TAG, "WIFI_EVENT_STA_CONNECTED，已连接到AP");
+                s_retry_num = 0; // 重置重试计数
+                break;
+            case WIFI_EVENT_STA_DISCONNECTED:
+                wifi_event_sta_disconnected_t* event = (wifi_event_sta_disconnected_t*) event_data;
+                ESP_LOGW(TAG, "WiFi断开连接，原因:%d", event->reason);
+                if (s_retry_num < MAX_RETRY_COUNT) {
+                    ESP_LOGI(TAG, "重试连接到AP... (%d/%d)", s_retry_num + 1, MAX_RETRY_COUNT);
+                    esp_wifi_connect();
+                    s_retry_num++;
+                } else {
+                    ESP_LOGW(TAG, "WiFi连接失败，达到最大重试次数");
+                    // 保存当前状态到NVS
+                    nvs_handle_t nvs_handle;
+                    esp_err_t err = nvs_open("wifi_state", NVS_READWRITE, &nvs_handle);
+                    if (err == ESP_OK) {
+                        nvs_set_u8(nvs_handle, "connection_failed", 1);
+                        nvs_commit(nvs_handle);
+                        nvs_close(nvs_handle);
+                    }
+                }
+                break;
+        }
+    } else if (event_base == IP_EVENT) {
+        if (event_id == IP_EVENT_STA_GOT_IP) {
+            ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+            ESP_LOGI(TAG, "获取到IP地址:" IPSTR, IP2STR(&event->ip_info.ip));
+            s_retry_num = 0; // 重置重试计数
+            // 保存成功状态到NVS
+            nvs_handle_t nvs_handle;
+            esp_err_t err = nvs_open("wifi_state", NVS_READWRITE, &nvs_handle);
+            if (err == ESP_OK) {
+                nvs_set_u8(nvs_handle, "connection_failed", 0);
+                nvs_commit(nvs_handle);
+                nvs_close(nvs_handle);
+            }
+        }
     }
 }
 
@@ -49,6 +96,12 @@ esp_err_t wifi_init_softap(void)
     // 注册WiFi事件处理函数
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                       ESP_EVENT_ANY_ID,
+                                                      &wifi_event_handler,
+                                                      NULL,
+                                                      NULL));
+
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                      IP_EVENT_STA_GOT_IP,
                                                       &wifi_event_handler,
                                                       NULL,
                                                       NULL));
@@ -77,10 +130,33 @@ esp_err_t wifi_init_softap(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     // 设置AP配置
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+
+    // 尝试从NVS读取保存的WiFi配置
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open("wifi_config", NVS_READONLY, &nvs_handle);
+    if (err == ESP_OK) {
+        wifi_config_t sta_config;
+        size_t size = sizeof(wifi_config_t);
+        err = nvs_get_blob(nvs_handle, "sta_config", &sta_config, &size);
+        if (err == ESP_OK) {
+            // 检查是否之前连接失败
+            uint8_t connection_failed = 0;
+            nvs_get_u8(nvs_handle, "connection_failed", &connection_failed);
+            
+            if (!connection_failed) {
+                ESP_LOGI(TAG, "找到已保存的WiFi配置，SSID: %s", sta_config.sta.ssid);
+                ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &sta_config));
+            } else {
+                ESP_LOGW(TAG, "上次WiFi连接失败，跳过自动连接");
+            }
+        }
+        nvs_close(nvs_handle);
+    }
+
     // 启动WiFi
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGI(TAG, "WiFi软AP初始化完成. SSID:%s 密码:%s 信道:%d",
+    ESP_LOGI(TAG, "WiFi初始化完成. SSID:%s 密码:%s 信道:%d",
              EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS, EXAMPLE_ESP_WIFI_CHANNEL);
     return ESP_OK;
 }

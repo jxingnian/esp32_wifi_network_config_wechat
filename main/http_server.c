@@ -15,6 +15,7 @@
 #include "cJSON.h"
 #include "http_server.h"
 #include <sys/stat.h> 
+#include "nvs_flash.h" // 添加nvs_flash.h头文件
 static const char *TAG = "http_server";
 static httpd_handle_t server = NULL;
 
@@ -78,17 +79,41 @@ static esp_err_t root_get_handler(httpd_req_t *req)
 // 处理WiFi扫描请求
 static esp_err_t scan_get_handler(httpd_req_t *req)
 {
+    ESP_LOGI(TAG, "收到WiFi扫描请求: %s", req->uri);
+    
     wifi_mode_t mode;
-    ESP_ERROR_CHECK(esp_wifi_get_mode(&mode));
+    esp_err_t err = esp_wifi_get_mode(&mode);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "获取WiFi模式失败: %s", esp_err_to_name(err));
+        const char *response = "{\"status\":\"error\",\"message\":\"Failed to get WiFi mode\"}";
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_send(req, response, strlen(response));
+        return ESP_OK;
+    }
     
     // 如果当前不是APSTA模式，切换到APSTA模式
     if (mode != WIFI_MODE_APSTA) {
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+        ESP_LOGI(TAG, "切换到APSTA模式");
+        err = esp_wifi_set_mode(WIFI_MODE_APSTA);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "设置WiFi模式失败: %s", esp_err_to_name(err));
+            const char *response = "{\"status\":\"error\",\"message\":\"Failed to set WiFi mode\"}";
+            httpd_resp_set_type(req, "application/json");
+            httpd_resp_send(req, response, strlen(response));
+            return ESP_OK;
+        }
     }
+
+    // 停止之前的扫描（如果有）
+    esp_wifi_scan_stop();
+    vTaskDelay(pdMS_TO_TICKS(100)); // 等待之前的扫描完全停止
 
     // 清除之前的扫描结果
     ESP_LOGI(TAG, "清除之前的扫描结果");
-    ESP_ERROR_CHECK(esp_wifi_clear_ap_list());
+    err = esp_wifi_clear_ap_list();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "清除AP列表失败: %s", esp_err_to_name(err));
+    }
     
     // 配置扫描参数
     wifi_scan_config_t scan_config = {
@@ -99,34 +124,34 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
         .scan_time = {
             .active = {
-                .min = 0,
-                .max = 100
+                .min = 100,
+                .max = 300
             }
         }
     };
     
     ESP_LOGI(TAG, "开始WiFi扫描...");
     // 开始扫描
-    esp_err_t scan_ret = esp_wifi_scan_start(&scan_config, true);
-    if (scan_ret != ESP_OK) {
-        ESP_LOGE(TAG, "WiFi扫描失败，错误码: %d", scan_ret);
-        char err_msg[64];
-        snprintf(err_msg, sizeof(err_msg), "{\"status\":\"error\",\"message\":\"Scan failed: %s\"}", esp_err_to_name(scan_ret));
+    err = esp_wifi_scan_start(&scan_config, true);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi扫描失败: %s", esp_err_to_name(err));
+        char err_msg[128];
+        snprintf(err_msg, sizeof(err_msg), 
+                "{\"status\":\"error\",\"message\":\"Scan failed: %s\",\"code\":%d}", 
+                esp_err_to_name(err), err);
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, err_msg, strlen(err_msg));
-        ESP_LOGI(TAG, "发送错误响应: %s", err_msg);
         return ESP_OK;
     }
     
     // 获取扫描结果
     uint16_t ap_count = 0;
-    esp_err_t ret = esp_wifi_scan_get_ap_num(&ap_count);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "获取AP数量失败，错误码: %d", ret);
+    err = esp_wifi_scan_get_ap_num(&ap_count);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "获取AP数量失败: %s", esp_err_to_name(err));
         const char *response = "{\"status\":\"error\",\"message\":\"Failed to get AP count\"}";
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, response, strlen(response));
-        ESP_LOGI(TAG, "发送错误响应: %s", response);
         return ESP_OK;
     }
     
@@ -136,7 +161,6 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         const char *response = "{\"status\":\"success\",\"message\":\"No WiFi networks found\",\"networks\":[]}";
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, response, strlen(response));
-        ESP_LOGI(TAG, "发送空网络响应: %s", response);
         return ESP_OK;
     }
     
@@ -146,24 +170,23 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         const char *response = "{\"status\":\"error\",\"message\":\"Memory allocation failed\"}";
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, response, strlen(response));
-        ESP_LOGI(TAG, "发送错误响应: %s", response);
         return ESP_OK;
     }
     
-    ret = esp_wifi_scan_get_ap_records(&ap_count, ap_records);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "获取AP记录失败，错误码: %d", ret);
+    err = esp_wifi_scan_get_ap_records(&ap_count, ap_records);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "获取AP记录失败: %s", esp_err_to_name(err));
         free(ap_records);
         const char *response = "{\"status\":\"error\",\"message\":\"Failed to get AP records\"}";
         httpd_resp_set_type(req, "application/json");
         httpd_resp_send(req, response, strlen(response));
-        ESP_LOGI(TAG, "发送错误响应: %s", response);
         return ESP_OK;
     }
     
-    // 创建JSON响应
+    // 构建JSON响应
     cJSON *root = cJSON_CreateObject();
-    cJSON *networks = cJSON_CreateArray();
+    cJSON_AddStringToObject(root, "status", "success");
+    cJSON *networks = cJSON_AddArrayToObject(root, "networks");
     
     for (int i = 0; i < ap_count; i++) {
         cJSON *ap = cJSON_CreateObject();
@@ -171,22 +194,17 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         cJSON_AddNumberToObject(ap, "rssi", ap_records[i].rssi);
         cJSON_AddNumberToObject(ap, "authmode", ap_records[i].authmode);
         cJSON_AddItemToArray(networks, ap);
-        ESP_LOGI(TAG, "SSID: %s, RSSI: %d", ap_records[i].ssid, ap_records[i].rssi);
     }
     
-    cJSON_AddStringToObject(root, "status", "success");
-    cJSON_AddItemToObject(root, "networks", networks);
-    
-    char *json_response = cJSON_Print(root);
+    char *json_response = cJSON_PrintUnformatted(root);
     httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, json_response);
-    
-    ESP_LOGI(TAG, "发送成功响应: %s", json_response);
+    httpd_resp_send(req, json_response, strlen(json_response));
     
     free(json_response);
     cJSON_Delete(root);
     free(ap_records);
     
+    ESP_LOGI(TAG, "WiFi扫描完成，发送响应");
     return ESP_OK;
 }
 
@@ -229,6 +247,23 @@ static esp_err_t configure_post_handler(httpd_req_t *req)
     strlcpy((char *)wifi_config.sta.ssid, ssid->valuestring, sizeof(wifi_config.sta.ssid));
     if (password && cJSON_IsString(password)) {
         strlcpy((char *)wifi_config.sta.password, password->valuestring, sizeof(wifi_config.sta.password));
+    }
+    
+    // 保存WiFi配置到NVS
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open("wifi_config", NVS_READWRITE, &nvs_handle);
+    if (err == ESP_OK) {
+        err = nvs_set_blob(nvs_handle, "sta_config", &wifi_config, sizeof(wifi_config_t));
+        if (err == ESP_OK) {
+            err = nvs_commit(nvs_handle);
+        }
+        nvs_close(nvs_handle);
+    }
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "保存WiFi配置失败: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "WiFi配置已保存到NVS");
     }
     
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
@@ -348,8 +383,22 @@ static const httpd_uri_t scan = {
     .user_ctx  = NULL
 };
 
-static const httpd_uri_t configure = {
+static const httpd_uri_t api_scan = {
+    .uri       = "/api/scan",
+    .method    = HTTP_GET,
+    .handler   = scan_get_handler,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t configure_old = {
     .uri       = "/configure",
+    .method    = HTTP_POST,
+    .handler   = configure_post_handler,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t configure = {
+    .uri       = "/api/connect",
     .method    = HTTP_POST,
     .handler   = configure_post_handler,
     .user_ctx  = NULL
@@ -379,17 +428,27 @@ static const httpd_uri_t delete_wifi = {
 // 启动Web服务器
 esp_err_t start_webserver(void)
 {
+    // 初始化NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.lru_purge_enable = true;
-    config.max_uri_handlers = 8;
+    config.max_uri_handlers = 9;
     
     ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
     
     if (httpd_start(&server, &config) == ESP_OK) {
         ESP_LOGI(TAG, "Registering URI handlers");
         httpd_register_uri_handler(server, &root);
-        httpd_register_uri_handler(server, &scan);
-        httpd_register_uri_handler(server, &configure);
+        httpd_register_uri_handler(server, &scan);        // 旧的扫描路径
+        httpd_register_uri_handler(server, &api_scan);    // 新的API扫描路径
+        httpd_register_uri_handler(server, &configure_old); // 旧的配置路径
+        httpd_register_uri_handler(server, &configure);     // 新的API配置路径
         httpd_register_uri_handler(server, &wifi_status);
         httpd_register_uri_handler(server, &saved_wifi);
         httpd_register_uri_handler(server, &delete_wifi);
