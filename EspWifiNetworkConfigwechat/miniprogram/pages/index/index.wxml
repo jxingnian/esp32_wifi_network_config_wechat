@@ -1,0 +1,35 @@
+<!--index.wxml-->
+<view class="container">
+  <view class="author">By.星年</view>
+
+  <view class="status-section">
+    <view class="status-title">ESP32状态</view>
+    <view class="status-item">
+      <text class="status-label">ESP32连接状态：</text>
+      <text class="status-value {{espStatus ? 'connected' : ''}}">{{espStatus ? '已连接' : '未连接'}}</text>
+    </view>
+
+    <view class="tip-section">
+      <view class="tip-title">连接说明</view>
+      <view class="tip-content">请手动连接到ESP32的WiFi热点</view>
+    </view>
+  
+    <view class="status-item">
+      <text class="status-label">WiFi名称：</text>
+      <text class="status-value">{{wifiInfo.ssid || '未连接'}}</text>
+    </view>
+    <view class="status-item">
+      <text class="status-label">WiFi状态：</text>
+      <text class="status-value {{wifiInfo.connected ? 'connected' : ''}}">{{wifiInfo.connected ? '已连接' : '未连接'}}</text>
+    </view>
+  </view>
+
+  <view class="wifi-section">
+    <view class="section-title">WiFi配置</view>
+    <input class="input" model:value="{{ssid}}" placeholder="请输入WiFi名称"/>
+    <input class="input" model:value="{{password}}" type="password" placeholder="请输入WiFi密码"/>
+  </view>
+
+  <button class="btn" bindtap="sendConfig">发送配网信息</button>
+  <button class="btn delete-btn" bindtap="deleteWifi">删除已连接WiFi</button>
+</view>

@@ -21,6 +21,18 @@
 static const char *TAG = "http_server";
 static httpd_handle_t server = NULL;
 
+// 函数声明
+static esp_err_t root_get_handler(httpd_req_t *req);
+static esp_err_t scan_get_handler(httpd_req_t *req);
+static esp_err_t configure_post_handler(httpd_req_t *req);
+static esp_err_t config_post_handler(httpd_req_t *req);
+static esp_err_t wifi_status_get_handler(httpd_req_t *req);
+static esp_err_t saved_wifi_get_handler(httpd_req_t *req);
+static esp_err_t delete_wifi_post_handler(httpd_req_t *req);
+static esp_err_t get_status_handler(httpd_req_t *req);
+static esp_err_t wechat_delete_wifi_handler(httpd_req_t *req);
+static bool is_wifi_config_exists(const char* ssid, const char* password);
+
 // 处理根路径请求 - 返回index.html
 static esp_err_t root_get_handler(httpd_req_t *req)
 {
@@ -245,6 +257,132 @@ static esp_err_t configure_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// 处理微信小程序配网请求
+static esp_err_t config_post_handler(httpd_req_t *req)
+{
+    char buf[200];
+    int ret, remaining = req->content_len;
+    
+    if (remaining > sizeof(buf)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content too long");
+        return ESP_FAIL;
+    }
+    
+    ret = httpd_req_recv(req, buf, remaining);
+    if (ret <= 0) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive data");
+        return ESP_FAIL;
+    }
+    
+    buf[ret] = '\0';
+    
+    cJSON *root = cJSON_Parse(buf);
+    if (root == NULL) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Failed to parse JSON");
+        return ESP_FAIL;
+    }
+    
+    cJSON *ssid = cJSON_GetObjectItem(root, "ssid");
+    cJSON *password = cJSON_GetObjectItem(root, "password");
+    
+    if (!ssid || !cJSON_IsString(ssid)) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing SSID");
+        return ESP_FAIL;
+    }
+    
+    // 检查配置是否已存在
+    if (is_wifi_config_exists(ssid->valuestring, password ? password->valuestring : "")) {
+        ESP_LOGI(TAG, "WiFi配置已存在，无需重复保存");
+        const char *response = "{\"status\":\"success\",\"message\":\"WiFi配置已存在\"}";
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+        httpd_resp_send(req, response, strlen(response));
+        cJSON_Delete(root);
+        return ESP_OK;
+    }
+    
+    // 配置WiFi连接
+    wifi_config_t wifi_config = {0};
+    strlcpy((char *)wifi_config.sta.ssid, ssid->valuestring, sizeof(wifi_config.sta.ssid));
+    if (password && cJSON_IsString(password)) {
+        strlcpy((char *)wifi_config.sta.password, password->valuestring, sizeof(wifi_config.sta.password));
+    }
+    
+    // 保存WiFi配置到NVS
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open("wifi_config", NVS_READWRITE, &nvs_handle);
+    if (err == ESP_OK) {
+        err = nvs_set_blob(nvs_handle, "sta_config", &wifi_config, sizeof(wifi_config_t));
+        if (err == ESP_OK) {
+            err = nvs_commit(nvs_handle);
+        }
+        nvs_close(nvs_handle);
+    }
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "保存WiFi配置失败: %s", esp_err_to_name(err));
+        const char *error_response = "{\"status\":\"error\",\"message\":\"保存WiFi配置失败\"}";
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+        httpd_resp_send(req, error_response, strlen(error_response));
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+    
+    ESP_LOGI(TAG, "WiFi配置已保存到NVS");
+    
+    // 设置WiFi模式并连接
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_connect());
+    
+    cJSON_Delete(root);
+    
+    const char *response = "{\"status\":\"success\",\"message\":\"WiFi配置已提交，正在连接...\"}";
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_send(req, response, strlen(response));
+    
+    return ESP_OK;
+}
+
+// 处理微信小程序删除WiFi请求
+static esp_err_t wechat_delete_wifi_handler(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "收到删除WiFi请求");
+    
+    // 断开当前WiFi连接
+    esp_wifi_disconnect();
+    
+    // 清除保存的WiFi配置
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open("wifi_config", NVS_READWRITE, &nvs_handle);
+    if (err == ESP_OK) {
+        err = nvs_erase_key(nvs_handle, "sta_config");
+        if (err == ESP_OK) {
+            err = nvs_commit(nvs_handle);
+            ESP_LOGI(TAG, "WiFi配置已从NVS中删除");
+        } else {
+            ESP_LOGE(TAG, "删除WiFi配置失败: %s", esp_err_to_name(err));
+        }
+        nvs_close(nvs_handle);
+    } else {
+        ESP_LOGE(TAG, "打开NVS失败: %s", esp_err_to_name(err));
+    }
+    
+    // 将WiFi模式设置回AP模式
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    
+    // 返回响应
+    const char *response = "{\"status\":\"success\",\"message\":\"WiFi配置已删除\"}";
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_send(req, response, strlen(response));
+    
+    return ESP_OK;
+}
+
 // 获取WiFi连接状态
 static esp_err_t wifi_status_get_handler(httpd_req_t *req)
 {
@@ -381,6 +519,53 @@ static esp_err_t delete_wifi_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// 获取WiFi状态 - 微信小程序接口
+static esp_err_t get_status_handler(httpd_req_t *req)
+{
+    wifi_ap_record_t ap_info;
+    char *response = NULL;
+    cJSON *root = cJSON_CreateObject();
+    
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        cJSON_AddStringToObject(root, "ssid", (char *)ap_info.ssid);
+        cJSON_AddBoolToObject(root, "connected", true);
+    } else {
+        cJSON_AddStringToObject(root, "ssid", "");
+        cJSON_AddBoolToObject(root, "connected", false);
+    }
+    
+    response = cJSON_PrintUnformatted(root);
+    httpd_resp_set_type(req, "application/json");
+    // 添加CORS头，允许小程序访问
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_sendstr(req, response);
+    
+    free(response);
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+// 检查WiFi配置是否已存在
+static bool is_wifi_config_exists(const char* ssid, const char* password) {
+    wifi_config_t saved_config = {0};
+    nvs_handle_t nvs_handle;
+    esp_err_t err = nvs_open("wifi_config", NVS_READONLY, &nvs_handle);
+    if (err == ESP_OK) {
+        size_t required_size = sizeof(wifi_config_t);
+        err = nvs_get_blob(nvs_handle, "sta_config", &saved_config, &required_size);
+        nvs_close(nvs_handle);
+        
+        if (err == ESP_OK) {
+            // 比较SSID和密码
+            if (strcmp((char*)saved_config.sta.ssid, ssid) == 0 &&
+                strcmp((char*)saved_config.sta.password, password) == 0) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // URI处理结构
 static const httpd_uri_t root = {
     .uri       = "/",
@@ -417,6 +602,13 @@ static const httpd_uri_t configure = {
     .user_ctx  = NULL
 };
 
+static const httpd_uri_t wechat_config = {
+    .uri       = "/config",
+    .method    = HTTP_POST,
+    .handler   = config_post_handler,
+    .user_ctx  = NULL
+};
+
 static const httpd_uri_t wifi_status = {
     .uri       = "/api/status",
     .method    = HTTP_GET,
@@ -438,6 +630,20 @@ static const httpd_uri_t delete_wifi = {
     .user_ctx  = NULL
 };
 
+static const httpd_uri_t get_status = {
+    .uri       = "/get_status",
+    .method    = HTTP_GET,
+    .handler   = get_status_handler,
+    .user_ctx  = NULL
+};
+
+static const httpd_uri_t wechat_delete = {
+    .uri       = "/delete_wifi",
+    .method    = HTTP_POST,
+    .handler   = wechat_delete_wifi_handler,
+    .user_ctx  = NULL
+};
+
 // 启动Web服务器
 esp_err_t start_webserver(void)
 {
@@ -449,22 +655,26 @@ esp_err_t start_webserver(void)
     }
     ESP_ERROR_CHECK(ret);
 
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.lru_purge_enable = true;
-    config.max_uri_handlers = 9;
+    httpd_config_t server_config = HTTPD_DEFAULT_CONFIG();
+    server_config.lru_purge_enable = true;
+    server_config.max_uri_handlers = 15;  // 增加处理器数量
+    server_config.server_port = 8080;
+
+    ESP_LOGI(TAG, "Starting server on port: '%d'", server_config.server_port);
     
-    ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
-    
-    if (httpd_start(&server, &config) == ESP_OK) {
+    if (httpd_start(&server, &server_config) == ESP_OK) {
         ESP_LOGI(TAG, "Registering URI handlers");
         httpd_register_uri_handler(server, &root);
         httpd_register_uri_handler(server, &scan);        // 旧的扫描路径
         httpd_register_uri_handler(server, &api_scan);    // 新的API扫描路径
         httpd_register_uri_handler(server, &configure_old); // 旧的配置路径
         httpd_register_uri_handler(server, &configure);     // 新的API配置路径
+        httpd_register_uri_handler(server, &wechat_config);  // 微信小程序配置路径
         httpd_register_uri_handler(server, &wifi_status);
         httpd_register_uri_handler(server, &saved_wifi);
         httpd_register_uri_handler(server, &delete_wifi);
+        httpd_register_uri_handler(server, &get_status);  // 获取状态路径
+        httpd_register_uri_handler(server, &wechat_delete);  // 微信小程序删除WiFi路径
         return ESP_OK;
     }
     
